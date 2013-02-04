@@ -1,6 +1,6 @@
 .data
 	prompt: .ascii ">: "
-	exitString: .ascii "exit"
+	exitString: .ascii "exit\0"
 	readBuffer: 
 		.ascii ""
 		.rept 256
@@ -27,49 +27,68 @@
 	.globl _start
 
 strlen:
-	pushq %rbp
-	movq %rsp, %rbp
-	movq 16(%rbp), %rdi
-	xorq %rax, %rax
-	xorq %rcx, %rcx
-	notq %rcx
+	push %rbp
+	mov %rsp, %rbp
+	mov 16(%rbp), %rdi
+	xor %rax, %rax
+	xor %rcx, %rcx
+	not %rcx
 	cld
 	repne scasb
-	notq %rcx
-	decq %rcx
-	movq %rcx, %rax
+	not %rcx
+	dec %rcx
+	mov %rcx, %rax
 	leave
 	ret
 
 shouldQuit:
-	pushq %rbp
-	movq %rsp, %rbp
-	movq 16(%rbp), %r10
-	pushq $exitStringLength
-	pushq $exitString
-	pushq %r10
+	push %rbp
+	mov %rsp, %rbp
+	mov 16(%rbp), %r10
+	mov 24(%rbp), %r11
+
+	mov $exitStringLength, %r12
+	cmp %r11, %r12
+	jne _shouldQuit_no
+
+	push %r11
+	push $exitString
+	push %r10
 	call memcmp
-	notq %rax
-	addq $24, %rsp
+	add $24, %rsp
+	_shouldQuit_no:
+	leave
+	ret
+
+zeroMem:
+	push %rbp
+	mov %rsp, %rbp
+	mov 16(%rbp), %rdi
+	mov 24(%rbp), %rcx
+	mov $0, %rax
+	cld
+	rep stosw
+
 	leave
 	ret
 
 loopPrompt:
-	pushq %rbp
-	movq %rsp, %rbp
+	push %rbp
+	mov %rsp, %rbp
 
 	_loopPrompt:
 	call writePrompt
 	call readPrompt
-	movq %rax, %r10
-	dec %rax				#Kind of a hack to assume the line read will end w/ newline
-	pushq $readBuffer
-	call write
-	addq $8, %rsp
 
+	dec %rax							#Kind of a hack to assume the entered text read will end w/ newline
+	mov $readBuffer, %r10
+	movb $0, (%rax, %r10, 1)
+
+	push %rax
 	push $readBuffer
 	call shouldQuit
-	addq $8, %rsp
+	addq $16, %rsp
+
 	cmpq $0, %rax
 	jne _loopPrompt
 
@@ -77,33 +96,40 @@ loopPrompt:
 	ret
 
 readPrompt:
-	pushq %rbp
-	movq %rsp, %rbp
-	movq $readBufferLength-1, %rdx
-	movq $readBuffer, %rsi
-	movq $STDIN, %rdi
-	movq $SYS_READ, %rax
+	push %rbp
+	mov %rsp, %rbp
+
+	push $readBufferLength
+	push $readBuffer
+	call zeroMem
+	add $16, %rsp
+
+	mov $readBufferLength-1, %rdx
+	mov $readBuffer, %rsi
+	mov $STDIN, %rdi
+	mov $SYS_READ, %rax
 	syscall
 	leave
 	ret
 
 writePrompt:
-	pushq %rbp
-	movq %rsp, %rbp
+	push %rbp
+	mov %rsp, %rbp
 	mov $promptLength, %rdx
-	leaq prompt, %rsi
-	movq $STDOUT, %rdi
-	movq $SYS_WRITE, %rax
+	mov $prompt, %rsi
+	mov $STDOUT, %rdi
+	mov $SYS_WRITE, %rax
 	syscall
 	leave
 	ret
 
 write:
-	pushq %rbp
-	movq %rsp, %rbp
-	movq 16(%rbp), %rsi
-	movq $STDOUT, %rdi
-	movq $SYS_WRITE, %rax
+	push %rbp
+	mov %rsp, %rbp
+	mov 16(%rbp), %rsi
+	mov 24(%rbp), %rdx
+	mov $STDOUT, %rdi
+	mov $SYS_WRITE, %rax
 	syscall
 	leave
 	ret
@@ -112,52 +138,46 @@ write:
 #Return values:
 ##0: string1 is equal to string2
 ##!0: string1 is inequal to string2
-
 memcmp:
-	pushq %rbp
-	movq %rsp, %rbp
-	movq 16(%rbp), %r13				#string1
-	movq 24(%rbp), %r14				#string2
-	movq 32(%rbp), %rcx				#length to compare
-	movq %rcx, %r9
-	movq %rcx, %r10
+	push %rbp
+	mov %rsp, %rbp
+	mov 16(%rbp), %r13				#string1
+	mov 24(%rbp), %r14				#string2
+	mov 32(%rbp), %rcx				#length to compare
+	mov %rcx, %r9
+	mov %rcx, %r10
 	xorq %r11, %r11
 
 	cmp $0, %rcx 						#Sanity check: only work with lengths >0
-	jle _memcmp_inequal
+	jle _memcmp_done
 
 	_memcmp_loop:
 	sub %rcx, %r10
 	movb (%r10, %r13, 1), %r11b
 	cmpb %r11b, (%r10, %r14, 1)
-	jne _memcmp_inequal
-	movq %r9, %r10						#Reset %r10 to original length
+	jne _memcmp_done
+	mov %r9, %r10						#Reset %r10 to original len in order to sub at the top of the loop 
 	dec %rcx
-	cmp $-1, %rcx
-	jg _memcmp_loop
-
-	_memcmp_equal:
-	inc %rcx
-
-	_memcmp_inequal:
-	movq %rcx, %rax
+	cmp $0, %rcx
+	jne _memcmp_loop
 
 	_memcmp_done:
+	mov %rcx, %rax
 	leave
 	ret
 
 _start:
-	pushq %rbp
-	movq %rsp, %rbp
+	push %rbp
+	mov %rsp, %rbp
 	call loopPrompt
 
 _exit_without_error:
-	movq $0, %rdi
+	mov $0, %rdi
 	jmp _exit
 
 _exit_with_error:
-	movq $1, %rdi
+	mov $1, %rdi
 
 _exit:
-	movq $SYS_EXIT, %rax
+	mov $SYS_EXIT, %rax
 	syscall
