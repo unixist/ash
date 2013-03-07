@@ -18,7 +18,6 @@
 	.equ SYS_CLOSE, 3
 	.equ SYS_STAT, 4
 	.equ SYS_ACCESS, 21
-	.equ SYS_ACCESS, 22
 	.equ SYS_FORK, 57
 	.equ SYS_EXIT, 60
 	.equ SYS_WAIT4, 61
@@ -56,7 +55,17 @@ shouldQuit:
 	push %r10
 	call memcmp
 	add $24, %rsp
+	cmp $0, %rax
+	je _shouldQuit_yes
+	
 	_shouldQuit_no:
+	mov $0, %rax
+	jmp _shouldQuit_exit
+
+	_shouldQuit_yes:
+	mov $1, %rax
+
+	_shouldQuit_exit:
 	leave
 	ret
 
@@ -89,9 +98,10 @@ loopPrompt:
 	call shouldQuit
 	addq $16, %rsp
 
-	cmpq $0, %rax
+	cmpq $1, %rax
 	jne _loopPrompt
 
+	_endLoopPrompt:
 	leave
 	ret
 
@@ -141,9 +151,9 @@ write:
 memcmp:
 	push %rbp
 	mov %rsp, %rbp
-	mov 16(%rbp), %r13				#string1
-	mov 24(%rbp), %r14				#string2
-	mov 32(%rbp), %rcx				#length to compare
+	mov 16(%rbp), %r13
+	mov 24(%rbp), %r14
+	mov 32(%rbp), %rcx
 	mov %rcx, %r9
 	mov %rcx, %r10
 	xorq %r11, %r11
