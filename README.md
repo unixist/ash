@@ -1,1 +1,1 @@
-Linux shell written in assembly. Useful mostly as a learning tool as less as a productive tool :)
+Linux shell written in assembly. Useful mostly as a learning tool and less as a productivity tool :)
