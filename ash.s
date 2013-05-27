@@ -1,29 +1,52 @@
 .data
+# Misc. strings
 	prompt: .ascii ">: "
 	exitString: .ascii "exit"
-	cmdCd: .ascii "cd"
-	readBuffer: 
-		.ascii ""
-		.rept 256
-		.byte 0
-		.endr
 
+# String identifiers for supported built-in commands
+	cmdCd: .ascii "cd"
+
+# Numeric identifiers for supported built-in commands
+	.equ cmdCdNum, 0
+
+# Command string lengths (e.g. "cd" is 2)
+	.equ cmdCdStringLength, 2
+
+# Misc. string lengths
 	.equ promptLength, 3
 	.equ exitStringLength, 4
-	.equ cmdCdStringLength, 2
 	.equ readBufferLength, 256
+	.equ pathBufferLength, 4096
+
+# Process constants
 	.equ stdin, 0
 	.equ stdout, 1
 	.equ stderr, 2
-	.equ sysRead, 0
-	.equ sysWrite, 1
+
+# Kernel system call constants
+	.equ sys_read, 0
+	.equ sys_write, 1
 	.equ sys_open, 2
 	.equ sys_close, 3
 	.equ sys_stat, 4
+	.equ sys_getcwd, 17
 	.equ sys_access, 21
+	.equ sys_chdir, 49
 	.equ sys_fork, 57
-	.equ sysExit, 60
+	.equ sys_exit, 60
 	.equ sys_wait4, 61
+
+# Misc. buffers
+	readBuffer: 
+		.ascii ""
+		.rept readBufferLength
+		.byte 0
+		.endr
+	pathBuffer: 
+		.ascii ""
+		.rept pathBufferLength
+		.byte 0
+		.endr
 
 .text
 	.globl _start
@@ -91,6 +114,47 @@ zeroMem:
 	leave
 	ret
 
+getCmd:
+	push %rbp
+	mov %rsp, %rbp
+	xor %r10, %r10
+
+# Get the entered command onto the top of getCmd's stack frame
+	mv 16(%rbp), %r11
+	push %r11
+	
+# Test to see whether the entered command is "cd"
+	push $cmdCd
+	push $cmdCdStringLength
+	call memcmp
+	add 16, %rsp
+# I don't like moving the command number into %r10 before we know that it is, in
+# fact, the command that was entered, but it allows for an easy jmp to _success
+	mov $cmdCdNum, %r10
+	cmd $e, %rax
+	je _getCmd_success
+
+# More command tests
+# ...
+	
+
+# Done
+
+# Remove the passed-in command from the stack
+	add $8, %rsp
+	
+	_getCmd_success:
+		mov %r10, %rax
+		jmp _getCmd_exit
+
+	_getCmd_failure:
+		mov $-1, %rax
+
+	_getCmd_exit:
+
+	leave
+	ret
+
 loopPrompt:
 	push %rbp
 	mov %rsp, %rbp
@@ -107,7 +171,15 @@ loopPrompt:
 	push %rax
 	push $readBuffer
 	call shouldQuit
-	addq $16, %rsp
+
+# Determine the command
+# $readBuffer is still the next arg on the stack
+	call getCmd
+	add $16, %rsp
+
+	cmp $-1, %rax
+# If the command is unrecognized or unexecutable
+	je _loopPrompt_badCmd
 
 	cmpq $1, %rax
 	jne _loopPrompt
@@ -128,8 +200,15 @@ readPrompt:
 	mov $readBufferLength-1, %rdx
 	mov $readBuffer, %rsi
 	mov $stdin, %rdi
-	mov $sysRead, %rax
+	mov $sys_read, %rax
 	syscall
+	leave
+	ret
+
+getCwd:
+	push %rbp
+	mov %rsp, %rbp
+	
 	leave
 	ret
 
@@ -139,7 +218,7 @@ writePrompt:
 	mov $promptLength, %rdx
 	mov $prompt, %rsi
 	mov $stdout, %rdi
-	mov $sysWrite, %rax
+	mov $sys_write, %rax
 	syscall
 	leave
 	ret
@@ -150,7 +229,7 @@ write:
 	mov 16(%rbp), %rsi
 	mov 24(%rbp), %rdx
 	mov $stdout, %rdi
-	mov $sysWrite, %rax
+	mov $sys_write, %rax
 	syscall
 	leave
 	ret
@@ -206,5 +285,5 @@ _exitWithError:
 	mov $1, %rdi
 
 _exit:
-	mov $sysExit, %rax
+	mov $sys_exit, %rax
 	syscall
