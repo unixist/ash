@@ -4,7 +4,7 @@
 	exitString: .ascii "exit"
 
 # String identifiers for supported built-in commands
-	cmdCd: .ascii "cd"
+	cmdCd: .ascii "cd\0"
 
 # Numeric identifiers for supported built-in commands
 	.equ cmdCdNum, 0
@@ -87,7 +87,6 @@ shouldQuit:
 	push $exitString
 	push %r10
 	call memcmp
-	add $24, %rsp
 	cmp $0, %rax
 	je _shouldQuit
 	
@@ -99,6 +98,7 @@ shouldQuit:
 	mov $1, %rax
 
 	_shouldQuit_exit:
+	add $24, %rsp
 	leave
 	ret
 
@@ -118,31 +118,27 @@ getCmd:
 	push %rbp
 	mov %rsp, %rbp
 	xor %r10, %r10
+	mov 16(%rbp), %r11 # Command entered
 
-# Get the entered command onto the top of getCmd's stack frame
-	mv 16(%rbp), %r11
-	push %r11
-	
 # Test to see whether the entered command is "cd"
-	push $cmdCd
 	push $cmdCdStringLength
+	push %r11
+	push $cmdCd
 	call memcmp
-	add 16, %rsp
+	add $16, %rsp
+
 # I don't like moving the command number into %r10 before we know that it is, in
 # fact, the command that was entered, but it allows for an easy jmp to _success
 	mov $cmdCdNum, %r10
-	cmd $e, %rax
+	cmp $0, %rax
 	je _getCmd_success
 
 # More command tests
 # ...
 	
 
-# Done
+# Done with command tests
 
-# Remove the passed-in command from the stack
-	add $8, %rsp
-	
 	_getCmd_success:
 		mov %r10, %rax
 		jmp _getCmd_exit
@@ -150,6 +146,9 @@ getCmd:
 	_getCmd_failure:
 		mov $-1, %rax
 
+# Remove the passed-in command from the stack
+	add $8, %rsp
+	
 	_getCmd_exit:
 
 	leave
@@ -171,20 +170,27 @@ loopPrompt:
 	push %rax
 	push $readBuffer
 	call shouldQuit
+  cmp $1, %rax
+  je _loopPrompt_exit
 
 # Determine the command
 # $readBuffer is still the next arg on the stack
 	call getCmd
-	add $16, %rsp
 
 	cmp $-1, %rax
 # If the command is unrecognized or unexecutable
 	je _loopPrompt_badCmd
 
+### Execute command here ###
+
 	cmpq $1, %rax
 	jne _loopPrompt
 
+  _loopPrompt_badCmd:
+# Not yet implemented
+
 	_loopPrompt_exit:
+	add $16, %rsp
 	leave
 	ret
 
