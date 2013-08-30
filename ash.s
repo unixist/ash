@@ -127,8 +127,8 @@ getCmd:
 	call memcmp
 	add $16, %rsp
 
-# I don't like moving the command number into %r10 before we know that it is, in
-# fact, the command that was entered, but it allows for an easy jmp to _success
+# I don't like moving the command number into %r10 before we know that it is, in fact
+# the command that was entered, but it allows for an easy jmp to _success if so
 	mov $cmdCdNum, %r10
 	cmp $0, %rax
 	je _getCmd_success
