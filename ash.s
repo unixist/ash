@@ -1,5 +1,7 @@
 .data
 # Misc. strings
+#  testStrchrChar: .ascii "a"
+#  testStrchrString: .ascii "asdf\0"
 	prompt: .ascii ">: "
 	exitString: .ascii "exit"
 
@@ -54,7 +56,7 @@
 /**
 *	@fn strlen
 *	@brief Calculate a string's length in bytes
-*	@param[in] String whose length is be calculated
+*	@param[in] String
 *	@param[out] String length
 */
 strlen:
@@ -242,11 +244,11 @@ write:
 
 /**
  *	@fn memcmp
- * @brief Bytewise-compare the memory at two addresses. Not exactly like memcmp(3).
- * @param[in] Address1
- * @param[in] Address2
- * @param[in] Number of bytes to compare
- * @retval 0 if memory regions are equal up to specified # of bytes; 1 otherwise
+ * @brief       Bytewise-compare the memory at two addresses. Not exactly like memcmp(3).
+ * @param[in]   Address1 - first byte-stream to compare
+ * @param[in]   Address2 - second byte-stream to compare
+ * @param[in]   Number of bytes to compare
+ * @retval      0 if memory regions are equal up to specified # of bytes; 1 otherwise
  */
 memcmp:
 	push %rbp
@@ -281,6 +283,16 @@ memcmp:
 _start:
 	push %rbp
 	mov %rsp, %rbp
+
+### TESTING
+#  push $testStrchrChar
+#  push $testStrchrString
+#  call strchr
+#  mov %rax, %rdi
+#  jmp _exit
+### END TESTING
+
+
 	call loopPrompt
 
 _exitWithoutError:
