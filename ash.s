@@ -2,20 +2,26 @@
 # Misc. strings
 #  testStrchrChar: .ascii "a"
 #  testStrchrString: .ascii "asdf\0"
+  cmdUnknown: .ascii "Unknown command\n"
+  cmdDelim: .ascii " "
 	prompt: .ascii ">: "
 	exitString: .ascii "exit"
 
 # String identifiers for supported built-in commands
 	cmdCd: .ascii "cd\0"
+	cmdHelp: .ascii "help\0"
 
 # Numeric identifiers for supported built-in commands
 	.equ cmdCdNum, 0
+	.equ cmdHelpNum, 1
 
 # Command string lengths (e.g. "cd" is 2)
 	.equ cmdCdStringLength, 2
+	.equ cmdHelpStringLength, 4
 
 # Misc. string lengths
 	.equ promptLength, 3
+  .equ cmdUnknownStringLength, 16
 	.equ exitStringLength, 4
 	.equ readBufferLength, 256
 	.equ pathBufferLength, 4096
@@ -121,37 +127,47 @@ getCmd:
 	mov %rsp, %rbp
 	xor %r10, %r10
 	mov 16(%rbp), %r11 # Command entered
+	mov 24(%rbp), %r12 # Length of command entered
 
+  cmp $cmdCdStringLength, %r12 
+  jne _getCmd_tryHelpCmd
 # Test to see whether the entered command is "cd"
-	push $cmdCdStringLength
+	push %r12
 	push %r11
 	push $cmdCd
 	call memcmp
-	add $16, %rsp
-
-# I don't like moving the command number into %r10 before we know that it is, in fact
-# the command that was entered, but it allows for an easy jmp to _success if so
-	mov $cmdCdNum, %r10
+  add $8, %rsp
+  push $cmdCdNum
 	cmp $0, %rax
 	je _getCmd_success
 
-# More command tests
-# ...
-	
 
-# Done with command tests
+# Test to see whether the entered command is "help"
+  _getCmd_tryHelpCmd:
+  cmp $cmdHelpStringLength, %r12
+  jne _getCmd_tryNextCmd
+  push $cmdHelp
+  call memcmp
+  cmp $0, %rax
+  je _getCmd_success
+
+# Test to see whether the entered command is "..."
+# ...
+  _getCmd_tryNextCmd:
+
+# Command tests completed. Assume failure unless we jumped to success
+  jmp _getCmd_failure
 
 	_getCmd_success:
-		mov %r10, %rax
+    pop %rax
 		jmp _getCmd_exit
 
 	_getCmd_failure:
 		mov $-1, %rax
 
-# Remove the passed-in command from the stack
-	add $8, %rsp
-	
 	_getCmd_exit:
+# Clear the first two args to memcmp (command and length) 
+    add $16, %rsp
 
 	leave
 	ret
@@ -169,30 +185,50 @@ loopPrompt:
 	mov $readBuffer, %r10
 	movb $0, (%rax, %r10, 1)
 
+# Stash the entered command length including any arguments
+  push %rax
+
+# See whether the program should quit (currently only if "exit" is entered)
 	push %rax
 	push $readBuffer
 	call shouldQuit
+  add $16, %rsp
   cmp $1, %rax
   je _loopPrompt_exit
 
-# Determine the command
-# $readBuffer is still the next arg on the stack
+# Look for a command delimiter to see whether a command was entered alone or with arguments
+  push $cmdDelim
+  push $readBuffer
+  call strchr
+  add $16, %rsp
+# If we find a command delimiter, stash just the size of the command without arguments
+  pop %r11
+  cmp $-1, %rax
+  cmovne %rax, %r11
+
+  push %r11
+  push $readBuffer
+# Determine the command. Buffer and length are still the next arg on the stack
 	call getCmd
+	add $16, %rsp
 
 	cmp $-1, %rax
 # If the command is unrecognized or unexecutable
 	je _loopPrompt_badCmd
 
-### Execute command here ###
-
 	cmpq $1, %rax
 	jne _loopPrompt
 
   _loopPrompt_badCmd:
+    push $cmdUnknownStringLength
+    push $cmdUnknown
+    call write
+    add $8, %rsp
+    jmp _loopPrompt
 # Not yet implemented
 
 	_loopPrompt_exit:
-	add $16, %rsp
+
 	leave
 	ret
 
@@ -223,75 +259,40 @@ getCwd:
 writePrompt:
 	push %rbp
 	mov %rsp, %rbp
+  push %rdx
+  push %rsi
+  push %rdi
 	mov $promptLength, %rdx
 	mov $prompt, %rsi
 	mov $stdout, %rdi
 	mov $sys_write, %rax
 	syscall
+  pop %rdi
+  pop %rsi
+  pop %rdx
 	leave
 	ret
 
 write:
 	push %rbp
 	mov %rsp, %rbp
+  push %rdx
+  push %rsi
+  push %rdi
 	mov 16(%rbp), %rsi
 	mov 24(%rbp), %rdx
 	mov $stdout, %rdi
 	mov $sys_write, %rax
 	syscall
-	leave
-	ret
-
-/**
- *	@fn memcmp
- * @brief       Bytewise-compare the memory at two addresses. Not exactly like memcmp(3).
- * @param[in]   Address1 - first byte-stream to compare
- * @param[in]   Address2 - second byte-stream to compare
- * @param[in]   Number of bytes to compare
- * @retval      0 if memory regions are equal up to specified # of bytes; 1 otherwise
- */
-memcmp:
-	push %rbp
-	mov %rsp, %rbp
-	mov 16(%rbp), %r13
-	mov 24(%rbp), %r14
-	mov 32(%rbp), %rcx
-	mov %rcx, %r9
-	mov %rcx, %r10
-	xorq %r11, %r11
-
-# Sanity check: only work with lengths >0
-	cmp $0, %rcx 						
-	jle _memcmp_exit
-
-	_memcmpLoop:
-	sub %rcx, %r10
-	movb (%r10, %r13, 1), %r11b
-	cmpb %r11b, (%r10, %r14, 1)
-	jne _memcmp_exit
-# Reset %r10 to original len in order to sub at the top of the loop
-	mov %r9, %r10						 
-	dec %rcx
-	cmp $0, %rcx
-	jne _memcmpLoop
-
-	_memcmp_exit:
-	mov %rcx, %rax
+  pop %rdi
+  pop %rsi
+  pop %rdx
 	leave
 	ret
 
 _start:
 	push %rbp
 	mov %rsp, %rbp
-
-### TESTING
-#  push $testStrchrChar
-#  push $testStrchrString
-#  call strchr
-#  mov %rax, %rdi
-#  jmp _exit
-### END TESTING
-
 
 	call loopPrompt
 
